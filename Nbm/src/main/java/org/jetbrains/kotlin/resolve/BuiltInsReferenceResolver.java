@@ -101,11 +101,14 @@ public class BuiltInsReferenceResolver {
         //if the sources are present, then the value cannot be null
         assert (ktBuiltInsFiles != null);
         
+        // ContextForNewModule signature gained (TargetPlatform, Map<ModuleCapability<?>, ?>) in
+        // kotlin-compiler 1.9. Pass JVM platform + empty capabilities map (no IDE module data).
         MutableModuleContext newModuleContext = ContextKt.ContextForNewModule(
                 ContextKt.ProjectContext(myProject, "<built-ins resolver module>"),
                 Name.special("<built-ins resolver module>"),
                 DefaultBuiltIns.getInstance(),
-                null);
+                JvmPlatforms.INSTANCE.getUnspecifiedJvmPlatform(),
+                java.util.Collections.emptyMap());
         newModuleContext.setDependencies(newModuleContext.getModule());
 
         FileBasedDeclarationProviderFactory declarationFactory = new FileBasedDeclarationProviderFactory(
@@ -121,7 +124,7 @@ public class BuiltInsReferenceResolver {
         newModuleContext.initializeModuleContents(resolveSession.getPackageFragmentProvider());
         
         PackageViewDescriptor packageView = newModuleContext.getModule().getPackage(
-                KotlinBuiltIns.BUILT_INS_PACKAGE_FQ_NAME);
+                org.jetbrains.kotlin.builtins.StandardNames.BUILT_INS_PACKAGE_FQ_NAME);
         List<PackageFragmentDescriptor> fragments = packageView.getFragments();
         
         moduleDescriptor = newModuleContext.getModule();
@@ -211,7 +214,9 @@ public class BuiltInsReferenceResolver {
             throw new RuntimeException(new IOException(VfsBundle.message("url.parse.error", url.toExternalForm())));
           }
         }
-        if (SystemInfo.isWindows) {
+        // SystemInfo.isWindows triggers SystemInfo class init which fails on JDK 17+ in
+        // core 232+ (IllegalArgumentException parsing version "25.0.1"). Use plain os.name.
+        if (System.getProperty("os.name", "").toLowerCase().contains("win")) {
           while (!path.isEmpty() && path.charAt(0) == '/') {
             path = path.substring(1, path.length());
           }
@@ -262,7 +267,7 @@ public class BuiltInsReferenceResolver {
         }
         
         if (originalDescriptor instanceof PackageFragmentDescriptor) {
-            return KotlinBuiltIns.BUILT_INS_PACKAGE_FQ_NAME.equals(((PackageFragmentDescriptor) originalDescriptor).getFqName())
+            return org.jetbrains.kotlin.builtins.StandardNames.BUILT_INS_PACKAGE_FQ_NAME.equals(((PackageFragmentDescriptor) originalDescriptor).getFqName())
                    ? builtinsPackageFragment
                    : null;
         }

@@ -16,6 +16,8 @@
 
 @file:JvmName("FuzzyTypeUtils")
 
+@file:Suppress("DEPRECATION_ERROR")
+
 package org.jetbrains.kotlin.idea.util
 
 import org.jetbrains.kotlin.descriptors.CallableDescriptor
@@ -182,7 +184,7 @@ class FuzzyType(
                         valueTransform = {
                             val typeProjection = TypeProjectionImpl(Variance.INVARIANT, it.defaultType)
                             val substitutedProjection = substitutorToKeepCapturedTypes.substitute(typeProjection)
-                            substitutedProjection?.takeIf { !ErrorUtils.containsUninferredParameter(it.type) } ?: typeProjection
+                            substitutedProjection?.takeIf { !org.jetbrains.kotlin.types.error.ErrorUtils.containsUninferredTypeVariable(it.type) } ?: typeProjection
                         })
         return TypeConstructorSubstitution.createByConstructorsMap(substitutionMap, approximateCapturedTypes = true).buildSubstitutor()
     }
