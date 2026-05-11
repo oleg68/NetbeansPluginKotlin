@@ -4,7 +4,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.nbplugins</groupId>
   <artifactId>netbeans-plugin-kotlin</artifactId>
-  <version>0.6.7-SNAPSHOT</version>
+  <version>0.6.8-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Netbeans Plugin Kotlin</name>
   <properties>
@@ -30,7 +30,6 @@
   </properties>
   <modules>
     <module>bundled-jars/PatchedCoreImpl</module>
-    <module>bundled-jars/KotlinIdeCommon</module>
     <module>bundled-jars/KotlinConverter</module>
     <module>Nbm</module>
   </modules>
@@ -128,15 +127,39 @@
 
   <dependencyManagement>
     <dependencies>
-      <!-- Bundled JARs -->
+      <!-- Pin kotlin-tooling-core to a released version available on Maven Central.
+           The *-for-ide:1.9.20-506 artifacts transitively depend on kotlin-tooling-core:1.9.20-dev-6566
+           whose parent BOM (kotlin-gradle-plugins-bom:1.9.20-dev-6566) is not in any public repo.
+           kotlin-tooling-core is Gradle build tooling, not IDE runtime — any compatible release works. -->
       <dependency>
-        <groupId>io.github.nbplugins</groupId>
-        <artifactId>netbeans-plugin-kotlin-ide-common</artifactId>
-        <version>${project.version}</version>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>kotlin-tooling-core</artifactId>
+        <version>1.9.25</version>
       </dependency>
+      <!-- Bundled JARs -->
       <dependency>
         <groupId>org.jetbrains.kotlin</groupId>
         <artifactId>formatter</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>base-fe10-analysis</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>base-fe10-code-insight</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>base-fe10-obsolete-compat</artifactId>
+        <version>231-1.9.20-506-IJ8109.175</version>
+      </dependency>
+      <dependency>
+        <groupId>org.jetbrains.kotlin</groupId>
+        <artifactId>base-psi</artifactId>
         <version>231-1.9.20-506-IJ8109.175</version>
       </dependency>
       <dependency>
