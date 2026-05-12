@@ -8,16 +8,14 @@
     <version>0.7.1-SNAPSHOT</version>
     <relativePath>../../pom.xml</relativePath>
   </parent>
-  <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
+  <artifactId>netbeans-plugin-kotlin-compiler</artifactId>
   <packaging>jar</packaging>
-  <name>Netbeans Plugin Kotlin Patched Core-Impl</name>
+  <name>Netbeans Plugin Kotlin Compiler</name>
   <description>
-    Repacks com.jetbrains.intellij.platform:{core, core-impl, util}:232 with EVERY class
-    that ALSO exists in kotlin-compiler:1.9.25 stripped out. After repacking, the
-    kotlin-compiler:1.9.25 shaded versions of those classes become the sole source
-    on the classpath — internally consistent with the rest of the shaded com.intellij.*
-    universe. Classes unique to 232 (not in kotlin-compiler) survive and are still
-    available for the Nbm stubs and code-style:241 to call.
+    Repacks kotlin-compiler:2.0.21 with every com/intellij/** class that also exists in
+    platform:242 (core + core-impl + util) stripped out — 2084 classes removed.
+    The 242-era versions of those classes are provided by netbeans-plugin-kotlin-core-impl.
+    The remaining 1652 kc-only com/intellij classes and all non-com/intellij content survive.
   </description>
 
   <dependencies>
@@ -25,19 +23,19 @@
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core</artifactId>
-      <version>${intellij.platform.232.version}</version>
+      <version>${intellij.platform.242.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>core-impl</artifactId>
-      <version>${intellij.platform.232.version}</version>
+      <version>${intellij.platform.242.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
       <artifactId>util</artifactId>
-      <version>${intellij.platform.232.version}</version>
+      <version>${intellij.platform.242.version}</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -49,7 +47,7 @@
 
   <build>
     <plugins>
-      <!-- Resolve dep paths into properties (e.g. ${org.jetbrains.kotlin:kotlin-compiler:jar}) -->
+      <!-- Resolve dep paths into properties -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
@@ -72,31 +70,35 @@
             <goals><goal>run</goal></goals>
             <configuration>
               <target>
-                <!-- 1. Extract com/intellij/ entries from kotlin-compiler:1.9.25 to side dir -->
-                <delete dir="${project.build.directory}/kc-com-intellij" quiet="true"/>
-                <mkdir dir="${project.build.directory}/kc-com-intellij"/>
-                <unzip src="${org.jetbrains.kotlin:kotlin-compiler:jar}"
-                       dest="${project.build.directory}/kc-com-intellij">
+                <!-- 1. Extract com/intellij/** from platform:242 into a side dir -->
+                <delete dir="${project.build.directory}/p242-com-intellij" quiet="true"/>
+                <mkdir dir="${project.build.directory}/p242-com-intellij"/>
+                <unzip src="${com.jetbrains.intellij.platform:core:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
                   <patternset includes="com/intellij/**"/>
                 </unzip>
-                <!-- 2. Unzip the three 232 jars into target/classes (fresh) -->
+                <unzip src="${com.jetbrains.intellij.platform:core-impl:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <unzip src="${com.jetbrains.intellij.platform:util:jar}"
+                       dest="${project.build.directory}/p242-com-intellij">
+                  <patternset includes="com/intellij/**"/>
+                </unzip>
+                <!-- 2. Unzip kotlin-compiler:2.0.21 into target/classes (fresh) -->
                 <delete dir="${project.build.directory}/classes" quiet="true"/>
                 <mkdir dir="${project.build.directory}/classes"/>
-                <unzip src="${com.jetbrains.intellij.platform:core:jar}"
+                <unzip src="${org.jetbrains.kotlin:kotlin-compiler:jar}"
                        dest="${project.build.directory}/classes"/>
-                <unzip src="${com.jetbrains.intellij.platform:core-impl:jar}"
-                       dest="${project.build.directory}/classes"/>
-                <unzip src="${com.jetbrains.intellij.platform:util:jar}"
-                       dest="${project.build.directory}/classes"/>
-                <!-- 3. Delete from target/classes every file whose path appears in
-                     kc-com-intellij — overlap removed; unique-to-232 entries survive. -->
+                <!-- 3. Delete from target/classes every com/intellij file that also exists in
+                     p242-com-intellij — 2084 overlap removed; 1652 kc-only classes survive. -->
                 <delete>
                   <fileset dir="${project.build.directory}/classes">
-                    <present targetdir="${project.build.directory}/kc-com-intellij" present="both"/>
+                    <present targetdir="${project.build.directory}/p242-com-intellij" present="both"/>
                   </fileset>
                 </delete>
-                <!-- 4. Cleanup the side dir; not needed anymore. -->
-                <delete dir="${project.build.directory}/kc-com-intellij" quiet="true"/>
+                <!-- 4. Cleanup the side dir. -->
+                <delete dir="${project.build.directory}/p242-com-intellij" quiet="true"/>
               </target>
             </configuration>
           </execution>
