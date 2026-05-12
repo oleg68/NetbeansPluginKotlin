@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.6.10-SNAPSHOT</version>
+    <version>0.7.0-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -151,22 +151,62 @@
       <artifactId>netbeans-plugin-kotlin-patched-core-impl</artifactId>
     </dependency>
 
-    <!-- Bundled JARs -->
+    <!-- Bundled JARs (base-fe10-* and base-psi): ALL transitive deps excluded.
+         The jetbrains-kotlin-ide-hosted real POMs declare many transitive deps (kotlin-compiler-*-for-ide,
+         platform JARs, etc.) that conflict with kotlin-compiler:2.0.21 at runtime. Our manually installed
+         versions have minimal POMs with no deps — this exclusion matches that baseline on CI. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-fe10-analysis</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-fe10-code-insight</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-fe10-obsolete-compat</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>base-psi</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <!-- K2 Analysis API foundation (C1) — classpath only; no call sites yet (C2+).
+         Base artifacts without -for-ide are not published publicly (IntelliJ-internal),
+         so all transitive deps are excluded; the -for-ide JARs themselves are the implementation. -->
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-standalone-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-fe10-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-k2-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-impl-base-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.jetbrains.kotlin</groupId>
+      <artifactId>analysis-api-platform-interface-for-ide</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
@@ -178,9 +218,13 @@
         </exclusion>
       </exclusions>
     </dependency>
+    <!-- formatter's real JetBrains POM declares kotlin-compiler-common-for-ide:1.9.20-506 as a
+         runtime dep — that fat JAR contains ClassId without Companion, causing NoSuchFieldError
+         when mixed with kotlin-compiler:2.0.21. Locally the POM was install:file minimal (no deps). -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>formatter</artifactId>
+      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
@@ -214,7 +258,7 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler</artifactId>
-      <!-- Version inherited from parent dependencyManagement: ${kotlin.runtime.version}=1.9.25.
+      <!-- Version inherited from parent dependencyManagement: ${kotlin.runtime.version}=2.0.21.
            stdlib/reflect/script-runtime also default to runtime version via parent DM (bundled-jars
            override them locally to ${kotlin.version}=1.3.72 for their own legacy compilation). -->
       <exclusions>
