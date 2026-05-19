@@ -1,4 +1,4 @@
-# 0.7
+# 0.7.13 (2026-05-19)
 
 - Switched all language features (diagnostics, completion, semantic highlighting, hints/quick-fixes, navigation) to the K2 Analysis API, replacing the previous K1 engine.
 - Added support for Kotlin 2.0.x source files.
