@@ -5,7 +5,7 @@
   <parent>
     <groupId>io.github.nbplugins</groupId>
     <artifactId>netbeans-plugin-kotlin</artifactId>
-    <version>0.8.6-SNAPSHOT</version>
+    <version>0.8.7-SNAPSHOT</version>
     <relativePath>../pom.xml</relativePath>
   </parent>
   <artifactId>netbeans-plugin-kotlin-nbm</artifactId>
@@ -169,62 +169,28 @@
       <artifactId>caffeine</artifactId>
     </dependency>
 
-    <!-- Bundled JARs (base-fe10-* and base-psi): ALL transitive deps excluded.
-         The jetbrains-kotlin-ide-hosted real POMs declare many transitive deps (kotlin-compiler-*-for-ide,
-         platform JARs, etc.) that conflict with our runtime. Our manually installed
-         versions have minimal POMs with no deps — this exclusion matches that baseline on CI. -->
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-fe10-analysis</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-fe10-code-insight</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-fe10-obsolete-compat</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>base-psi</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <!-- K2 Analysis API foundation (C1) — classpath only; no call sites yet (C2+).
-         Base artifacts without -for-ide are not published publicly (IntelliJ-internal),
-         so all transitive deps are excluded; the -for-ide JARs themselves are the implementation. -->
+    <!-- K2 Analysis API: each -for-ide artifact's POM declares its non-for-ide counterpart
+         with *:* self-exclusions, so only pure-Kotlin runtime deps (caffeine, kotlinx-*, etc.)
+         flow through — no IntelliJ platform JARs. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-standalone-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
-    </dependency>
-    <dependency>
-      <groupId>org.jetbrains.kotlin</groupId>
-      <artifactId>analysis-api-fe10-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-k2-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-impl-base-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>analysis-api-platform-interface-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlinx</groupId>
@@ -233,12 +199,10 @@
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>low-level-api-fir-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>symbol-light-classes-for-ide</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
@@ -250,13 +214,9 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <!-- formatter's real JetBrains POM declares kotlin-compiler-common-for-ide:1.9.20-506 as a
-         runtime dep — that fat JAR contains ClassId without Companion, causing NoSuchFieldError
-         when mixed with kotlin-compiler:2.0.21. Locally the POM was install:file minimal (no deps). -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>formatter</artifactId>
-      <exclusions><exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion></exclusions>
     </dependency>
     <dependency>
       <groupId>com.jetbrains.intellij.platform</groupId>
@@ -286,20 +246,15 @@
 
     <!-- D3+D4+D5: kotlin-compiler-common-for-ide (Kotlin PSI, FIR frontend, descriptors, etc.)
          + kotlin-compiler-ir-for-ide (IR backend). Both are unshaded — no com/intellij classes.
-         All transitive deps excluded: platform 253 and analysis-api are declared explicitly above. -->
+         Transitive deps (other compiler modules) carry their own *:* self-exclusions in the
+         -for-ide POMs, so the tree stays clean without blanket exclusions here. -->
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler-common-for-ide</artifactId>
-      <exclusions>
-        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
-      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains.kotlin</groupId>
       <artifactId>kotlin-compiler-ir-for-ide</artifactId>
-      <exclusions>
-        <exclusion><groupId>*</groupId><artifactId>*</artifactId></exclusion>
-      </exclusions>
     </dependency>
     <dependency>
       <groupId>org.jetbrains</groupId>
