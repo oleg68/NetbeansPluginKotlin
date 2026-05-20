@@ -1,4 +1,4 @@
-# 0.8
+# 0.8.6 (2026-05-20)
 
 - Fixed JDK standard library types not visible in the K2 analysis session, causing false type errors and broken semantic highlighting for code that uses JDK types.
 - Added support for Kotlin 2.3.x source files.
