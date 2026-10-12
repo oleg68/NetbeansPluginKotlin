@@ -779,6 +779,37 @@ Priority order: E1 → E2 → E3 → E4 → E5 → E6 → E7 → E8 → E9 → E
       document. Java/comment/text/index-only references, full IDEA project-model conflicts, and
       arbitrary multi-selection remain outside the standalone scope.
 
+  - [x] **F4.3** — Move Nested Kotlin Member (Refactor menu)
+    - Adds **Refactor → Move Nested Member...** for the portable K2-native subset: a nested named
+      class/object can move to a selected named class/object; a companion-object function/property
+      can move only to a selected target declaring exactly one companion object.
+    - `KaMoveNestedMemberComputer` retains IDEA K2 internal-reference marking, rebinding, and
+      shortening support while the passive NetBeans target chooser receives controller-computed
+      candidates and never invokes K2 directly.
+    - `KotlinMoveNestedMemberPlugin` validates a freshly resolved source/target immediately before
+      mutation, stages every returned changed file through `KotlinRefactoringTransaction`, rolls back
+      on a persistence failure, and supports **Refactor → Undo Last Refactoring** for source and target.
+    - The intentionally narrow standalone boundary rejects instance members, constructors, enum entries,
+      initializers, alias imports, duplicate targets, Java/non-code/comment/index-only scenarios, and
+      external qualified usages whose rewrite has not been validated.
+
+  - [x] **F7** — Rename Kotlin File and Package Directory (Refactor menu / folder context menu)
+    - Adds an explicit **Refactor → Rename Kotlin File...** command for the active `.kt` file.
+      It uses `KotlinRefactoringTransaction` to rename only the physical basename and supports
+      **Undo Last Refactoring**; package declarations and Java file-facade references are deliberately
+      unchanged.
+    - Adds folder-node **Rename Kotlin Package Directory...**. The transaction renames the folder
+      first so real final `PsiDirectory` targets exist, refreshes the standalone K2 session, then
+      invokes the already ported `K2MoveFilesHandler` through `KaMoveFileComputer`. The K2 adapter
+      performs eligible package-directive rewrites, portable conflict detection, and supported Kotlin
+      reference retargeting; the transaction stages its text results and rolls both text and folder
+      paths back if any later step fails.
+    - The generic IDEA rename UI/lifecycle remains intentionally unported because it depends on
+      writable IntelliJ VFS, indexed Java/file-facade search, automatic-renamer extensions, and
+      action/command infrastructure unavailable in standalone NetBeans. Unicode/quoted names,
+      Java/comment/text/index-only references, automatic renamers, and full project-model behavior
+      remain outside this portable adapter.
+
   - [x] **E9.8** — Change Signature (Ctrl+F6) — PRs #114, #115
     - IDEA sources: `changeSignature/KotlinChangeSignatureUsageSearcher.kt`,
       `changeSignature/KotlinChangeInfo.kt`, `changeSignature/KotlinChangeInfoBase.kt`,

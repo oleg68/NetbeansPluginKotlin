@@ -42,8 +42,14 @@ import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinCopyDeclarationRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationPlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveDeclarationRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveNestedMemberPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveNestedMemberRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFilePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinMoveFileRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFilePlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameFileRefactoring;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameDirectoryPlugin;
+import io.github.nbplugins.kotlin.nbm.refactoring.KotlinRenameDirectoryRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackagePlugin;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangePackageRefactoring;
 import io.github.nbplugins.kotlin.nbm.refactoring.KotlinChangeSignaturePlugin;
@@ -99,6 +105,7 @@ import org.openide.util.lookup.ServiceProvider;
  *   <li>{@link KotlinIntroduceFunctionalParameterRefactoring} — delegates to {@link KotlinIntroduceFunctionalParameterPlugin}</li>
  *   <li>{@link KotlinCopyDeclarationRefactoring} — delegates to {@link KotlinCopyDeclarationPlugin}</li>
  *   <li>{@link KotlinMoveDeclarationRefactoring} — delegates to {@link KotlinMoveDeclarationPlugin}</li>
+ *   <li>{@link KotlinMoveNestedMemberRefactoring} — delegates to {@link KotlinMoveNestedMemberPlugin}</li>
  *   <li>{@link KotlinMoveFileRefactoring} — delegates to {@link KotlinMoveFilePlugin}</li>
  *   <li>{@link KotlinChangePackageRefactoring} — delegates to {@link KotlinChangePackagePlugin}</li>
  *   <li>{@link KotlinChangeSignatureRefactoring} — delegates to {@link KotlinChangeSignaturePlugin}</li>
@@ -114,6 +121,12 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         // before the legacy editor-document applicability guard below.
         if (refactoring instanceof KotlinMoveFileRefactoring) {
             return new KotlinMoveFilePlugin((KotlinMoveFileRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinRenameFileRefactoring) {
+            return new KotlinRenameFilePlugin((KotlinRenameFileRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinRenameDirectoryRefactoring) {
+            return new KotlinRenameDirectoryPlugin((KotlinRenameDirectoryRefactoring) refactoring);
         }
         if (refactoring instanceof KotlinChangePackageRefactoring) {
             return new KotlinChangePackagePlugin((KotlinChangePackageRefactoring) refactoring);
@@ -179,6 +192,9 @@ public class KotlinRefactoringsFactory implements RefactoringPluginFactory {
         }
         if (refactoring instanceof KotlinMoveDeclarationRefactoring) {
             return new KotlinMoveDeclarationPlugin((KotlinMoveDeclarationRefactoring) refactoring);
+        }
+        if (refactoring instanceof KotlinMoveNestedMemberRefactoring) {
+            return new KotlinMoveNestedMemberPlugin((KotlinMoveNestedMemberRefactoring) refactoring);
         }
         if (refactoring instanceof KotlinChangeSignatureRefactoring) {
             return new KotlinChangeSignaturePlugin((KotlinChangeSignatureRefactoring) refactoring);
