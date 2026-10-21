@@ -248,6 +248,34 @@ class KaMoveNestedMemberComputerTest : KotlinTestCase("KaMoveNestedMemberCompute
         }
     }
 
+    /**
+     * Rejects an `inner` class at the caret instead of moving its supported enclosing nested class.
+     */
+    fun testInnerClassInsideNestedClass_doesNotFallBackToOuterClass() {
+        val fixture = createFixture(
+            sourceBody = "class Outer { inner class Inner }",
+            targetBody = "",
+        ) ?: return
+        try {
+            val computer = fixture.computer("Inner")
+
+            assertSame(KaMoveNestedMemberComputer.Outcome.NotApplicable, computer.compute())
+            assertTrue(computer.discoverTargets(listOf(fixture.sourceFile, fixture.targetFile)).isEmpty())
+            assertSame(
+                KaMoveNestedMemberComputer.ConflictCheck.NotApplicable,
+                computer.checkConflicts(fixture.targetFile, fixture.target.textOffset),
+            )
+            assertSame(
+                KaMoveNestedMemberComputer.Apply.NotApplicable,
+                computer.move(fixture.targetFile, fixture.target.textOffset),
+            )
+            assertTrue("Outer must not be moved:\n${fixture.sourceFile.text}", fixture.sourceFile.text.contains("class Outer"))
+            assertTrue("Inner must remain intact:\n${fixture.sourceFile.text}", fixture.sourceFile.text.contains("inner class Inner"))
+        } finally {
+            fixture.directory.toFile().deleteRecursively()
+        }
+    }
+
     /** Creates a standalone K2 project with source, target, and optional external usage files. */
     private fun createFixture(sourceBody: String, targetBody: String, usage: String? = null): Fixture? {
         val stdlib = findKotlinStdlib() ?: return null

@@ -37,6 +37,7 @@ import org.openide.text.PositionBounds
 import org.openide.util.Lookup
 import org.openide.util.lookup.Lookups
 import javax.swing.text.Position.Bias
+import java.util.LinkedHashMap
 
 /**
  * Bridges NetBeans Change Kotlin Package UI to the standalone K2 semantic adapter.
@@ -85,6 +86,7 @@ class KotlinChangePackageApplyElement(
     private val refactoring: KotlinChangePackageRefactoring,
 ) : SimpleRefactoringElementImplementation() {
     private var transaction: KotlinRefactoringTransaction? = null
+    private var undoCaretOffsets: Map<FileObject, Int> = emptyMap()
 
     /** @return preview label for this all-or-nothing operation. */
     override fun getText(): String = "Change Kotlin package"
@@ -109,7 +111,9 @@ class KotlinChangePackageApplyElement(
             check(KotlinPackageTarget(project, selection.representativeFile).isValidPackage(basePackage)) {
                 "Target package is invalid: $basePackage"
             }
+            KotlinAnalysisAPISession.invalidate(project)
             val session = KotlinAnalysisAPISession.getSession(project)
+            session.synchronizeOpenDocuments()
             val sourceByPath = selection.sourceFiles.associateBy(FileObject::getPath)
             val targets = selection.sourceFiles.associate { source ->
                 val file = session.getKtFileForPath(source.path)
@@ -131,16 +135,18 @@ class KotlinChangePackageApplyElement(
                     throw outcome.error
                 }
                 is KaChangePackageComputer.ApplyOutcome.Success -> {
+                    val caretOffsets = LinkedHashMap<FileObject, Int>()
                     outcome.changedFiles.forEach { (path, text) ->
                         val file = sourceByPath[path] ?: FileUtil.toFileObject(FileUtil.normalizeFile(java.io.File(path)))
                             ?: error("Change Kotlin Package could not resolve changed file $path.")
-                        val originalText = outcome.originalTexts[path]
-                            ?: error("Change Kotlin Package has no original text snapshot for $path.")
-                        current.captureExisting(file, originalText)
-                        current.stageHunkText(file, text, project, openCaretOffset(file))
+                        val caretOffset = openCaretOffset(file)
+                        current.captureExisting(file)
+                        current.stageHunkText(file, text, project, caretOffset)
+                        caretOffset?.let { caretOffsets[file] = it }
                     }
                     current.commit()
                     transaction = current
+                    undoCaretOffsets = caretOffsets
                     pending = null
                 }
             }
@@ -161,14 +167,15 @@ class KotlinChangePackageApplyElement(
         cookie.openedPanes?.firstOrNull()?.caretPosition
     }.getOrNull()
 
-    /** Restores all original package directives and usage texts. */
+    /** Restores all original package directives, usage texts, and open-editor carets. */
     override fun undoChange() {
         runCatching {
-            val current = transaction
-            if (current != null) {
-                current.undo()
-                transaction = null
-            }
+            val current = transaction ?: return@runCatching
+            val caretOffsets = undoCaretOffsets
+            current.undo()
+            transaction = null
+            undoCaretOffsets = emptyMap()
+            caretOffsets.forEach { (file, offset) -> restoreAfterUndo { restoreCaret(file, offset) } }
             KotlinAnalysisAPISession.invalidate(project)
         }.onFailure { error ->
             KotlinLogger.INSTANCE.logException("KotlinChangePackageApplyElement.undoChange failed", error)
