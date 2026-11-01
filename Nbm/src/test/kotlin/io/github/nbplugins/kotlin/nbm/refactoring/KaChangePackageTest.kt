@@ -251,6 +251,60 @@ class KaChangePackageTest : KotlinTestCase("KaChangePackageTest", "moveFile") {
         }
     }
 
+    /** Verifies a directory rename's path-derived package rewrites every moved descendant together. */
+    fun testApply_realSession_appliesOnePathDerivedPackageToAllDescendants() {
+        val stdlib = findStdlibJar() ?: run {
+            println("kotlin-stdlib not on test classpath — skipping Change Package integration test")
+            return
+        }
+        val temporaryRoot = Files.createTempDirectory("nbkotlin-rename-package-directory")
+        try {
+            val folder = temporaryRoot.resolve("physical/before")
+            val usageDirectory = temporaryRoot.resolve("usage")
+            Files.createDirectories(folder)
+            Files.createDirectories(usageDirectory)
+            val firstPath = folder.resolve("First.kt")
+            val secondPath = folder.resolve("Second.kt")
+            val usagePath = usageDirectory.resolve("Usage.kt")
+            Files.writeString(firstPath, "package declared.pkg\n\nfun first() = 1\n")
+            Files.writeString(secondPath, "package declared.pkg\n\nfun second() = first()\n")
+            Files.writeString(
+                usagePath,
+                "package usage\n\nimport declared.pkg.first\n\nfun use() = first()\n",
+            )
+            val session = KotlinAnalysisAPISession.createWithJars(
+                moduleName = "rename-package-directory-integration",
+                binaryJars = listOf(stdlib),
+                sourceRoots = listOf(temporaryRoot),
+            )
+            val firstFile = session.getKtFileForPath(firstPath.toString()) ?: error("Could not obtain First.kt PSI")
+            val secondFile = session.getKtFileForPath(secondPath.toString()) ?: error("Could not obtain Second.kt PSI")
+
+            val outcome = KaChangePackageComputer(firstFile).apply(
+                mapOf(firstFile to FqName("renamed"), secondFile to FqName("renamed")),
+                updateReferences = true,
+            )
+
+            assertTrue("Expected Change Package success, got $outcome", outcome is KaChangePackageComputer.ApplyOutcome.Success)
+            val success = outcome as KaChangePackageComputer.ApplyOutcome.Success
+            val firstText = success.changedFiles[firstPath.toString()].orEmpty()
+            val secondText = success.changedFiles[secondPath.toString()].orEmpty()
+            assertTrue(firstText, firstText.contains("package renamed"))
+            assertTrue(secondText, secondText.contains("package renamed"))
+            assertFalse(
+                "a co-moved same-package caller must not gain an import: $secondText",
+                secondText.contains("import renamed.first"),
+            )
+            val usageText = success.changedFiles[usagePath.toString()].orEmpty()
+            assertTrue(
+                "External import must follow the declaration; changed=${success.changedFiles.keys}, usage=$usageText",
+                usageText.contains("import renamed.first"),
+            )
+        } finally {
+            temporaryRoot.toFile().deleteRecursively()
+        }
+    }
+
     /** Locates Kotlin stdlib supplied by the Maven test runtime. */
     private fun findStdlibJar(): Path? = System.getProperty("java.class.path")
         .split(System.getProperty("path.separator"))

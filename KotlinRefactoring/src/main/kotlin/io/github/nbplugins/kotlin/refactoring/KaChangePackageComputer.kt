@@ -23,24 +23,34 @@ import org.jetbrains.kotlin.idea.k2.refactoring.move.MoveImport
 import org.jetbrains.kotlin.idea.k2.refactoring.move.descriptor.K2ChangePackageDescriptor
 import org.jetbrains.kotlin.idea.k2.refactoring.move.processor.K2ChangePackageRefactoringProcessor
 import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
-import org.jetbrains.kotlin.psi.KtPsiFactory
-import org.jetbrains.kotlin.resolve.ImportPath
 
 /**
  * Applies IDEA K2 Change Package semantics without its IDE-specific processor lifecycle.
  *
  * NetBeans supplies writable session PSI and persists the returned text atomically. The computer
- * retains the upstream algorithm's usage discovery, conflict pass, package rewrite, declaration
- * identity map, and reference retargeting while deliberately leaving filesystem mutations to no one:
- * changing a package never changes a physical path.
+ * retains the upstream algorithm's usage discovery, conflict pass, and package rewrite, then
+ * retargets supported Kotlin references by rewriting captured source text. It deliberately leaves
+ * filesystem mutations to no one: changing a package never changes a physical path.
+ *
+ * Source text is used for reference retargeting because mutating a package directive invalidates
+ * every standalone PSI smart pointer, including those held by K2 [UsageInfo] objects. The IDEA
+ * implementation survives this only because its documents are synchronised between the phases.
  *
  * @param ktFile representative writable K2-session source file
  */
 class KaChangePackageComputer(
     private val ktFile: KtFile,
 ) {
+    private companion object {
+        /** Matches a file-level Kotlin package directive in source text. */
+        val PACKAGE_DIRECTIVE = Regex("(?m)^package\\s+[^\\s;]+")
+
+        /** Matches a non-aliased Kotlin import directive in source text. */
+        val IMPORT_DIRECTIVE = Regex("(?m)^import\\s+([A-Za-z_][A-Za-z0-9_.]*)\\s*$")
+    }
 
     /** Describes the result of applying package changes to one or more Kotlin source files. */
     sealed class ApplyOutcome {
@@ -82,18 +92,19 @@ class KaChangePackageComputer(
                 )
             }
             // Use the copied upstream Change Package processor rather than the F4.1 Move File helper:
-            // its findUsages() marks whole-file internal references. That is what forces a same-package,
-            // no-import usage in another source file to gain an import after its declaration changes package.
+            // its findUsages() also reports whole-file internal references, so a same-package caller
+            // without any import is still known and gets an explicit import once the package changes.
             val usages = if (updateReferences) processors.flatMap { it.findUsages().asIterable() }.distinct() else emptyList()
             val conflicts = processors.flatMap { processor ->
                 processor.findConflicts(usages.filterIsInstance<MoveRenameUsageInfo>()).values()
             }
             if (conflicts.isNotEmpty()) return ApplyOutcome.Conflicts(conflicts.distinct())
 
-            val movedImports = files.flatMap { file ->
+            val movedDeclarations = files.flatMap { file ->
                 file.declarations.mapNotNull { declaration ->
                     (declaration as? KtNamedDeclaration)?.name?.let { name ->
-                        MoveImport(file.packageFqName, name) to targets.getValue(file)
+                        file.packageFqName.child(Name.identifier(name)) to
+                            targets.getValue(file).child(Name.identifier(name))
                     }
                 }
             }.toMap()
@@ -104,24 +115,35 @@ class KaChangePackageComputer(
             }
             val importOnlyUsageFiles = if (updateReferences) {
                 KotlinMoveUsageSearchService.getInstance()
-                    ?.findImportingFiles(ktFile.project, movedImports)
+                    ?.findImportingFiles(
+                        ktFile.project,
+                        movedDeclarations.mapKeys { (oldFqName, _) ->
+                            MoveImport(oldFqName.parent(), oldFqName.shortName().asString())
+                        }.mapValues { (_, newFqName) -> newFqName.parent() },
+                    )
                     .orEmpty()
             } else {
                 emptyList()
             }
-            val usageFiles = (filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys).distinct()
-            val originalTexts = (files + usageFiles).distinct().mapNotNull { file ->
+            val participants = (files + filesWithUsages(usages) + importOnlyUsageFiles + samePackageImportUpdates.keys)
+                .distinct()
+            // Snapshot before any mutation: updatePackageDirective invalidates standalone PSI.
+            val originalTexts = participants.mapNotNull { file ->
                 file.virtualFile?.path?.let { path -> path to file.text }
             }.toMap()
-            val oldToNew = linkedMapOf<com.intellij.psi.PsiElement, com.intellij.psi.PsiElement>()
-            processors.forEach { processor -> processor.prepareRefactoring(oldToNew) }
-            if (updateReferences) processors.first().retargetUsages(usages, oldToNew)
+
+            // Everything needed from PSI is captured above. From here on only text is touched,
+            // because a package-directive replacement invalidates standalone PSI stubs and every
+            // K2 UsageInfo smart pointer the upstream retargeter would dereference.
+            processors.forEach { processor -> processor.updatePackages() }
 
             val changedFiles = linkedMapOf<String, String>()
-            files.forEach { file -> file.virtualFile?.path?.let { changedFiles[it] = file.text } }
-            usageFiles.filterNot { it in files }.forEach { file ->
-                rewriteMovedImports(file, movedImports)
-                val changedText = addSamePackageImports(file, samePackageImportUpdates[file].orEmpty())
+            participants.forEach { file ->
+                val changedText = rewriteMovedReferences(
+                    file.text,
+                    movedDeclarations,
+                    samePackageImportUpdates[file].orEmpty(),
+                )
                 file.virtualFile?.path?.let { changedFiles[it] = changedText }
             }
             ApplyOutcome.Success(changedFiles, originalTexts)
@@ -133,8 +155,8 @@ class KaChangePackageComputer(
     /**
      * Finds old-package simple references that will lose their implicit package visibility.
      *
-     * The standalone K2 retargeter excludes these whole-file internal usages, so identify them
-     * before changing directives and later add only the imports required to preserve binding.
+     * Text-based retargeting can rewrite an existing import but cannot invent one, so discover the
+     * affected callers before directives change and later add only the imports they need.
      */
     private fun findSamePackageImportUpdates(
         movedFiles: Collection<KtFile>,
@@ -142,7 +164,7 @@ class KaChangePackageComputer(
     ): Map<KtFile, Set<FqName>> {
         val movedDeclarations = movedFiles.flatMap { file ->
             file.declarations.filterIsInstance<KtNamedDeclaration>().mapNotNull { declaration ->
-                declaration.name?.let { name -> declaration to targets.getValue(file).child(org.jetbrains.kotlin.name.Name.identifier(name)) }
+                declaration.name?.let { name -> declaration to targets.getValue(file).child(Name.identifier(name)) }
             }
         }.toMap()
         if (movedDeclarations.isEmpty()) return emptyMap()
@@ -151,7 +173,9 @@ class KaChangePackageComputer(
         movedDeclarations.forEach { (declaration, targetFqName) ->
             session.findUsages(declaration).forEach { reference ->
                 val file = reference.element?.containingFile as? KtFile ?: return@forEach
-                if (file in movedFiles || file.packageFqName != declaration.containingKtFile.packageFqName) return@forEach
+                val originalPackage = declaration.containingKtFile.packageFqName
+                val finalPackage = targets[file]
+                if (file.packageFqName != originalPackage || finalPackage == targetFqName.parent()) return@forEach
                 updates.getOrPut(file, ::linkedSetOf) += targetFqName
             }
         }
@@ -161,27 +185,30 @@ class KaChangePackageComputer(
     /**
      * Adds imports for former same-package declarations that no longer resolve implicitly.
      *
-     * The standalone K2 retargeter creates the first import list without its package separator.
-     * Rebuild this narrow header text rather than inserting PSI whitespace, which the standalone
-     * parser drops while adding the import-list node.
+     * The header is rebuilt as text rather than through PSI: the import list is invalid after the
+     * package directive changed, and the standalone parser drops inserted whitespace nodes.
      *
      * @return final source text with a canonical package/import boundary
      */
-    private fun addSamePackageImports(usageFile: KtFile, imports: Set<FqName>): String {
-        if (imports.isEmpty()) return usageFile.text
-        val packageDirective = usageFile.packageDirective ?: return usageFile.text
-        val importList = usageFile.importList
-        val existingImports = importList?.imports.orEmpty().map { it.text }
-        val existingFqNames = usageFile.importDirectives.mapNotNull { it.importedFqName }.toSet()
-        val missingImports = imports.filterNot { it in existingFqNames }.map { imported ->
-            "import ${imported.asString()}"
+    private fun addSamePackageImports(usageText: String, imports: Set<FqName>): String {
+        if (imports.isEmpty()) return usageText
+        val packageMatch = PACKAGE_DIRECTIVE.find(usageText) ?: return usageText
+        val existingFqNames = IMPORT_DIRECTIVE.findAll(usageText)
+            .map { match -> FqName(match.groupValues[1]) }
+            .toSet()
+        val missingImports = imports.filterNot { it in existingFqNames }
+            .map { imported -> "import ${imported.asString()}" }
+        if (missingImports.isEmpty()) return usageText
+        val firstImport = IMPORT_DIRECTIVE.find(usageText)
+        return if (firstImport == null) {
+            usageText.substring(0, packageMatch.range.last + 1) +
+                "\n\n${missingImports.joinToString(separator = "\n")}" +
+                usageText.substring(packageMatch.range.last + 1)
+        } else {
+            usageText.substring(0, firstImport.range.first) +
+                "${missingImports.joinToString(separator = "\n")}\n" +
+                usageText.substring(firstImport.range.first)
         }
-        val directives = existingImports + missingImports
-        if (directives.isEmpty()) return usageFile.text
-        val headerEnd = importList?.textRange?.endOffset ?: packageDirective.textRange.endOffset
-        return usageFile.text.substring(0, packageDirective.textRange.endOffset) +
-            "\n\n${directives.joinToString(separator = "\n")}" +
-            usageFile.text.substring(headerEnd)
     }
 
     /** Captures usage files before K2 reference rebinding can invalidate individual usage elements. */
@@ -189,21 +216,114 @@ class KaChangePackageComputer(
         usages.mapNotNull { usage -> usage.element?.containingFile as? KtFile }.distinct()
 
     /**
-     * Replaces direct imports after K2 code retargeting.
+     * Rewrites imports and fully qualified Kotlin references without touching invalid standalone PSI.
      *
-     * Standalone K2 cannot safely rebind a segment within an import directive because that can
-     * invalidate the complete import list before an IDEA document synchronizer updates it.
+     * [K2ChangePackageRefactoringProcessor.updatePackages] invalidates every standalone PSI smart
+     * pointer. Source text has already been captured in [originalTexts] at that point, so update
+     * only FQN token sequences and import directives here; ordinary simple references continue to
+     * resolve through their rewritten imports.
+     *
+     * @param usageText source text read after the package directive changed
+     * @param movedDeclarations old declaration FQNs mapped to their new FQNs
+     * @param samePackageImports explicit imports needed by callers that formerly shared a package
+     * @return source text that preserves supported Kotlin bindings after the package change
      */
-    private fun rewriteMovedImports(usageFile: KtFile, movedImports: Map<MoveImport, FqName>) {
-        if (movedImports.isEmpty()) return
-        val factory = KtPsiFactory(usageFile.project)
-        usageFile.importDirectives.forEach { directive ->
-            if (directive.aliasName != null || directive.isAllUnder) return@forEach
-            val importedFqName = directive.importedFqName ?: return@forEach
-            val importedName = directive.importedName ?: return@forEach
-            val targetPackage = movedImports[MoveImport(importedFqName.parent(), importedName.asString())]
-                ?: return@forEach
-            directive.replace(factory.createImportDirective(ImportPath(targetPackage.child(importedName), false)))
+    private fun rewriteMovedReferences(
+        usageText: String,
+        movedDeclarations: Map<FqName, FqName>,
+        samePackageImports: Set<FqName>,
+    ): String {
+        val retargetedText = if (movedDeclarations.isEmpty()) {
+            usageText
+        } else {
+            usageText.replaceFqNames(movedDeclarations)
         }
+        return addSamePackageImports(retargetedText, samePackageImports)
     }
+
+    /**
+     * Replaces the longest matching declaration FQN at each position, outside comments and strings.
+     *
+     * Longest match wins so that a qualified access such as `a.b.C.member` keeps its suffix even
+     * when both `a.b.C` and a shorter prefix are moved declarations.
+     */
+    private fun String.replaceFqNames(mappings: Map<FqName, FqName>): String {
+        val candidates = mappings.entries
+            .map { (oldFqName, newFqName) -> oldFqName.asString() to newFqName.asString() }
+            .sortedByDescending { (oldFqName, _) -> oldFqName.length }
+        val result = StringBuilder(length)
+        var index = 0
+        var inLineComment = false
+        var inBlockComment = false
+        var quote: Char? = null
+        while (index < length) {
+            val current = this[index]
+            val next = getOrNull(index + 1)
+            when {
+                inLineComment -> {
+                    result.append(current)
+                    if (current == '\n') inLineComment = false
+                    index++
+                }
+                inBlockComment -> {
+                    result.append(current)
+                    if (current == '*' && next == '/') {
+                        result.append(next)
+                        index += 2
+                        inBlockComment = false
+                    } else {
+                        index++
+                    }
+                }
+                quote != null -> {
+                    result.append(current)
+                    if (current == '\\' && next != null) {
+                        result.append(next)
+                        index += 2
+                    } else {
+                        if (current == quote) quote = null
+                        index++
+                    }
+                }
+                current == '/' && next == '/' -> {
+                    result.append(current).append(next)
+                    index += 2
+                    inLineComment = true
+                }
+                current == '/' && next == '*' -> {
+                    result.append(current).append(next)
+                    index += 2
+                    inBlockComment = true
+                }
+                current == '\'' || current == '\"' -> {
+                    result.append(current)
+                    quote = current
+                    index++
+                }
+                else -> {
+                    val match = candidates.firstOrNull { (oldFqName, _) ->
+                        startsWith(oldFqName, index) && canStartFqNameAt(index) && canEndFqNameAt(index + oldFqName.length)
+                    }
+                    if (match == null) {
+                        result.append(current)
+                        index++
+                    } else {
+                        result.append(match.second)
+                        index += match.first.length
+                    }
+                }
+            }
+        }
+        return result.toString()
+    }
+
+    /** Rejects a match that continues a longer identifier or qualified name on its left. */
+    private fun String.canStartFqNameAt(index: Int): Boolean {
+        val previous = index - 1
+        return previous !in indices || (!this[previous].isLetterOrDigit() && this[previous] != '_' && this[previous] != '.')
+    }
+
+    /** Rejects a match that continues a longer identifier on its right; `.member` suffixes are kept. */
+    private fun String.canEndFqNameAt(index: Int): Boolean =
+        index !in indices || (!this[index].isLetterOrDigit() && this[index] != '_')
 }
